@@ -128,7 +128,6 @@ def main():
         if 'FUNCIONAMENTO' not in sit and 'ATIVO' not in sit: continue
         nome = f['nome']
         if not nome: continue
-        if 'MASTER' in strip_acc(nome.upper()): continue
         cat = classify(f['tipo'], nome)
         if not cat: continue
         fund_map[f['cnpj']] = {'nome': nome, 'cat': cat}

@@ -2,8 +2,8 @@
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
-<base href="/fundos-cvm/">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<base href="/fundos-cvm/">
 <title>Fundos BR · CVM</title>
 <link href="https://fonts.googleapis.com/css2?family=Libre+Baskerville:ital@0;1&family=Instrument+Sans:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
@@ -18,15 +18,14 @@ header{background:var(--paper);border-bottom:1px solid var(--rule);padding:0 40p
 .dl{font-size:11px;color:var(--ink3);text-transform:uppercase;letter-spacing:.8px}
 .di{font-family:var(--sans);font-size:13px;color:var(--ink);background:var(--bg);border:1px solid var(--rule2);border-radius:6px;padding:5px 10px;outline:none;color-scheme:light}
 .di:focus{border-color:var(--ink2)}
-.db{width:26px;height:26px;border:1px solid var(--rule2);border-radius:5px;background:var(--bg);color:var(--ink2);cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:center;transition:all .12s;line-height:1;border:none;border:1px solid var(--rule2)}
+.db{width:26px;height:26px;border:1px solid var(--rule2);border-radius:5px;background:var(--bg);color:var(--ink2);cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:center;transition:all .12s}
 .db:hover:not(:disabled){background:var(--ink);color:var(--paper);border-color:var(--ink)}.db:disabled{opacity:.3;cursor:default}
 .lb{font-size:11px;font-family:var(--sans);font-weight:500;padding:4px 10px;border-radius:5px;border:1px solid var(--rule2);background:transparent;color:var(--ink2);cursor:pointer;transition:all .12s}
 .lb:hover,.lb.on{background:var(--ink);color:var(--paper);border-color:var(--ink)}
 .hsp{flex:1}
 .st{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--ink3)}
 .sd{width:6px;height:6px;border-radius:50%;background:var(--accent)}
-.sd.L{background:var(--gold);animation:p .8s ease infinite alternate}
-.sd.E{background:var(--red)}
+.sd.L{background:var(--gold);animation:p .8s ease infinite alternate}.sd.E{background:var(--red)}
 @keyframes p{from{opacity:.4}to{opacity:1}}
 main{padding:28px 40px;max-width:1640px;margin:0 auto}
 .fi{display:flex;align-items:center;gap:12px;margin-bottom:24px;flex-wrap:wrap}
@@ -47,7 +46,7 @@ main{padding:28px 40px;max-width:1640px;margin:0 auto}
 .ch{display:flex;align-items:center;justify-content:space-between;padding:14px 20px;border-bottom:1px solid var(--rule);gap:12px;flex-wrap:wrap}
 .ct{font-family:var(--serif);font-size:15px}
 .bs{display:flex;gap:6px}
-.bg{font-size:11px;padding:3px 10px;border-radius:20px;background:var(--bg);color:var(--ink2);border:1px solid var(--rule2)}
+.bg2{font-size:11px;padding:3px 10px;border-radius:20px;background:var(--bg);color:var(--ink2);border:1px solid var(--rule2)}
 .ts{overflow-x:auto}
 table{width:100%;border-collapse:collapse}
 thead th{padding:9px 16px;text-align:left;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.7px;color:var(--ink3);border-bottom:1px solid var(--rule);background:var(--bg);white-space:nowrap;cursor:pointer;user-select:none}
@@ -121,16 +120,26 @@ td.r{text-align:right;font-size:12.5px;font-variant-numeric:tabular-nums}
     <div class="sc"><div class="sl">Mediana MTD</div><div class="sv" id="smtd">-</div><div class="ss">No mes</div></div>
   </div>
   <div class="cd">
-    <div class="ch"><div class="ct">Performance de Fundos</div><div class="bs"><span class="bg" id="tcnt">-</span><span class="bg" id="tdate">-</span></div></div>
-    <div id="ta"><div class="ld"><div class="sp"></div><div class="lt">Carregando dados...</div><div class="ls">Atualizado diariamente as 07h BRT</div></div></div>
+    <div class="ch"><div class="ct">Performance de Fundos</div><div class="bs"><span class="bg2" id="tcnt">-</span><span class="bg2" id="tdate">-</span></div></div>
+    <div id="ta"><div class="ld"><div class="sp"></div><div class="lt">Carregando dados...</div><div class="ls">Primeira carga pode levar alguns segundos</div></div></div>
   </div>
   <div class="ft">Fonte: <strong>CVM</strong> · Feeders ativos sem Masters · PL min R$1M · Retornos sobre cotas diarias · <span id="gat">-</span></div>
 </main>
 <script>
-let aF=[],vF=[],uD='',cD='',cat='all',srt='pl',asc=false,pg=1,srch='';
-const PER=50,$=id=>document.getElementById(id);
+// ── State ──────────────────────────────────────────────────────────────────
+let rawFunds=[], viewFunds=[], ultimaData='', currentDate='';
+let cat='all', srt='pl', asc=false, pg=1, srch='';
+const PER=50, $=id=>document.getElementById(id);
+
+// ── Utils ──────────────────────────────────────────────────────────────────
 function shift(s,n){const d=new Date(s+'T12:00:00Z');d.setDate(d.getDate()+n);return d.toISOString().slice(0,10)}
 function fBR(s){if(!s)return'-';const[y,m,d]=s.split('-');return d+'/'+m+'/'+y}
+function subMonths(s,m){
+  const d=new Date(s+'T12:00:00Z');
+  d.setMonth(d.getMonth()-m);
+  return d.toISOString().slice(0,10);
+}
+
 const fmt={
   p:v=>v==null?'-':(v>=0?'+':'')+v.toFixed(2)+'%',
   pl:v=>{if(!v)return'-';if(v>=1e9)return'R$ '+(v/1e9).toFixed(1)+'B';if(v>=1e6)return'R$ '+(v/1e6).toFixed(0)+'M';return'R$ '+(v/1e3).toFixed(0)+'K'},
@@ -141,72 +150,172 @@ const fmt={
 const cc=v=>v==null?'neu':v>0?'pos':v<0?'neg':'neu';
 const med=a=>{const s=a.filter(v=>v!=null).sort((a,b)=>a-b);if(!s.length)return null;const m=Math.floor(s.length/2);return s.length%2?s[m]:(s[m-1]+s[m])/2};
 function setSt(c,t){$('sdot').className='sd'+(c==='ok'?'':c==='L'?' L':' E');$('stxt').textContent=t}
-async function loadDate(dt){
-  cD=dt;setSt('L','Carregando...');
-  $('ta').innerHTML='<div class="ld"><div class="sp"></div><div class="lt">Carregando...</div></div>';
-  const urls=dt===uD?['data/latest.json','data/'+dt+'.json']:['data/'+dt+'.json','data/latest.json'];
-  let data=null;
-  for(const url of urls){try{const r=await fetch(url+'?v='+Date.now());if(r.ok){data=await r.json();break}}catch(e){}}
-  if(!data){
-    setSt('E','Sem dados');
-    $('ta').innerHTML='<div class="er"><div class="em">Dados nao encontrados</div><div class="es">Esta data nao tem dados gerados. Selecione outra data ou aguarde a atualizacao de amanha.</div><button class="rb" onclick="loadDate(uD)">Carregar ultimo dado</button></div>';
-    return;
-  }
-  aF=data.funds||[];
-  $('gat').textContent='Gerado: '+(data.geradoEm?new Date(data.geradoEm).toLocaleString('pt-BR'):'-');
-  setSt('ok',aF.length+' fundos - '+fBR(data.ultimaData||dt));
-  filt();
+
+// ── Return computation (runs in browser) ──────────────────────────────────
+// cotas = [[dt, quota, pl, cotistas], ...] sorted by dt ascending
+function closestBefore(cotas, target){
+  let best=null;
+  for(const c of cotas){ if(c[0]<=target) best=c; else break; }
+  return best;
 }
+function findFrom(cotas, target){
+  const b=closestBefore(cotas,target);
+  if(b) return b;
+  return cotas.find(c=>c[0]>=target)||cotas[0];
+}
+function retPct(a,b){
+  if(!a||!b||!a[1]||!b[1]) return null;
+  return (b[1]/a[1]-1)*100;
+}
+
+function computeReturns(cotas, baseDt){
+  const base=closestBefore(cotas,baseDt);
+  if(!base) return null;
+  const y=baseDt.slice(0,4), mo=baseDt.slice(5,7);
+  const mtdFrom = findFrom(cotas, y+'-'+mo+'-01');
+  const ytdFrom = findFrom(cotas, y+'-01-01');
+  const from12m = findFrom(cotas, subMonths(baseDt,12));
+  const from24m = findFrom(cotas, subMonths(baseDt,24));
+  return {
+    pl:      base[2],
+    cotistas:base[3],
+    lastDt:  base[0],
+    retMTD:  retPct(mtdFrom, base),
+    retYTD:  retPct(ytdFrom, base),
+    ret12m:  retPct(from12m, base),
+    ret24m:  retPct(from24m, base),
+  };
+}
+
+// ── Compute all funds for a given date ────────────────────────────────────
+function computeAll(date){
+  setSt('L','Calculando '+fBR(date)+'...');
+  const result=[];
+  for(const f of rawFunds){
+    const r=computeReturns(f.cotas, date);
+    if(!r||!r.pl||r.pl<1000000) continue;
+    result.push({cnpj:f.cnpj, nome:f.nome, cat:f.cat, ...r});
+  }
+  result.sort((a,b)=>(b.pl||0)-(a.pl||0));
+  setSt('ok', result.length+' fundos - '+fBR(date));
+  return result;
+}
+
+// ── Filter + render ───────────────────────────────────────────────────────
 function filt(){
-  let d=[...aF];
-  if(cat!=='all')d=d.filter(f=>f.cat===cat);
+  let d=computeAll(currentDate);
+  if(cat!=='all') d=d.filter(f=>f.cat===cat);
   if(srch){const s=srch.toLowerCase();d=d.filter(f=>f.nome.toLowerCase().includes(s)||(f.cnpj||'').includes(s))}
   d.sort((a,b)=>{const va=a[srt]??(asc?Infinity:-Infinity),vb=b[srt]??(asc?Infinity:-Infinity);return asc?va-vb:vb-va});
-  vF=d;pg=1;stats(d);tbl();
+  viewFunds=d; pg=1; stats(d); tbl();
 }
+
 function stats(d){
   $('st2').textContent=d.length.toLocaleString('pt-BR');
   $('spl').textContent=fmt.pa(d.reduce((s,f)=>s+(f.pl||0),0));
   const sv=(id,v)=>{const e=$(id);e.textContent=fmt.p(v);e.className='sv '+cc(v)};
   sv('s12',med(d.map(f=>f.ret12m)));sv('sytd',med(d.map(f=>f.retYTD)));sv('smtd',med(d.map(f=>f.retMTD)));
-  $('tcnt').textContent=d.length+' fundos';$('tdate').textContent='Base '+fBR(cD);$('reftag').textContent='Ref: '+fBR(cD);
+  $('tcnt').textContent=d.length+' fundos';$('tdate').textContent='Base '+fBR(currentDate);$('reftag').textContent='Ref: '+fBR(currentDate);
 }
+
 const CL={multi:'Multimercado',acoes:'Acoes',credito:'Credito'};
 const CC2={multi:'cM',acoes:'cA',credito:'cC'};
+
 function tbl(){
-  const tot=vF.length,pgs=Math.ceil(tot/PER),st=(pg-1)*PER,sl=vF.slice(st,st+PER);
-  const mx=Math.max(...vF.map(f=>f.pl||0));
+  const tot=viewFunds.length,pgs=Math.ceil(tot/PER),st=(pg-1)*PER,sl=viewFunds.slice(st,st+PER);
+  const mx=Math.max(...viewFunds.map(f=>f.pl||0));
   const ar=c=>c===srt?(asc?'&#8593;':'&#8595;'):'';
-  let h='<div class="ts"><table><thead><tr><th style="width:36px">#</th><th>Fundo</th><th>Categoria</th><th class="r sk" data-sort="pl">PL '+ar('pl')+'</th><th class="r" data-sort="retMTD">MTD '+ar('retMTD')+'</th><th class="r" data-sort="retYTD">YTD '+ar('retYTD')+'</th><th class="r" data-sort="ret12m">12M '+ar('ret12m')+'</th><th class="r" data-sort="ret24m">24M '+ar('ret24m')+'</th><th class="r">Cotistas</th></tr></thead><tbody>';
+  let h='<div class="ts"><table><thead><tr><th style="width:36px">#</th><th>Fundo</th><th>Categoria</th>'
+    +'<th class="r sk" data-sort="pl">PL '+ar('pl')+'</th>'
+    +'<th class="r" data-sort="retMTD">MTD '+ar('retMTD')+'</th>'
+    +'<th class="r" data-sort="retYTD">YTD '+ar('retYTD')+'</th>'
+    +'<th class="r" data-sort="ret12m">12M '+ar('ret12m')+'</th>'
+    +'<th class="r" data-sort="ret24m">24M '+ar('ret24m')+'</th>'
+    +'<th class="r">Cotistas</th></tr></thead><tbody>';
+
   sl.forEach((f,i)=>{
-    const rk=st+i+1,bar=mx?Math.round((f.pl/mx)*100):0;
-    h+='<tr><td style="font-size:11px;color:var(--ink3)">'+rk+'</td><td><div class="fn" title="'+f.nome+'">'+f.nome+'</div><div class="fc">'+fmt.cn(f.cnpj)+'</div></td><td><span class="cb '+(CC2[f.cat]||'')+'">'+( CL[f.cat]||f.cat)+'</span></td><td class="r"><div class="pw">'+fmt.pl(f.pl)+'<div class="pb2"><div class="pf" style="width:'+bar+'%"></div></div></div></td><td class="r '+cc(f.retMTD)+'">'+fmt.p(f.retMTD)+'</td><td class="r '+cc(f.retYTD)+'">'+fmt.p(f.retYTD)+'</td><td class="r '+cc(f.ret12m)+'">'+fmt.p(f.ret12m)+'</td><td class="r '+cc(f.ret24m)+'">'+fmt.p(f.ret24m)+'</td><td class="r neu">'+fmt.n(f.cotistas)+'</td></tr>';
+    const rk=st+i+1, bar=mx?Math.round((f.pl/mx)*100):0;
+    h+='<tr>'
+      +'<td style="font-size:11px;color:var(--ink3)">'+rk+'</td>'
+      +'<td><div class="fn" title="'+f.nome+'">'+f.nome+'</div><div class="fc">'+fmt.cn(f.cnpj)+'</div></td>'
+      +'<td><span class="cb '+(CC2[f.cat]||'')+'">'+( CL[f.cat]||f.cat)+'</span></td>'
+      +'<td class="r"><div class="pw">'+fmt.pl(f.pl)+'<div class="pb2"><div class="pf" style="width:'+bar+'%"></div></div></div></td>'
+      +'<td class="r '+cc(f.retMTD)+'">'+fmt.p(f.retMTD)+'</td>'
+      +'<td class="r '+cc(f.retYTD)+'">'+fmt.p(f.retYTD)+'</td>'
+      +'<td class="r '+cc(f.ret12m)+'">'+fmt.p(f.ret12m)+'</td>'
+      +'<td class="r '+cc(f.ret24m)+'">'+fmt.p(f.ret24m)+'</td>'
+      +'<td class="r neu">'+fmt.n(f.cotistas)+'</td>'
+      +'</tr>';
   });
   h+='</tbody></table></div>';
-  if(pgs>1){h+='<div class="pg"><span class="pi">'+(st+1)+'-'+Math.min(st+PER,tot)+' de '+tot+'</span><button class="pb3" onclick="gp('+(pg-1)+')" '+(pg<=1?'disabled':'')+'>&#8249;</button>';for(let p=Math.max(1,pg-2);p<=Math.min(pgs,pg+2);p++)h+='<button class="pb3 '+(p===pg?'on':'')+'" onclick="gp('+p+')">'+p+'</button>';h+='<button class="pb3" onclick="gp('+(pg+1)+')" '+(pg>=pgs?'disabled':'')+'>&#8250;</button></div>';}
+
+  if(pgs>1){
+    h+='<div class="pg"><span class="pi">'+(st+1)+'-'+Math.min(st+PER,tot)+' de '+tot+'</span>';
+    h+='<button class="pb3" onclick="gp('+(pg-1)+')" '+(pg<=1?'disabled':'')+'>&#8249;</button>';
+    for(let p=Math.max(1,pg-2);p<=Math.min(pgs,pg+2);p++)
+      h+='<button class="pb3 '+(p===pg?'on':'')+'" onclick="gp('+p+')">'+p+'</button>';
+    h+='<button class="pb3" onclick="gp('+(pg+1)+')" '+(pg>=pgs?'disabled':'')+'>&#8250;</button></div>';
+  }
   $('ta').innerHTML=h;
-  document.querySelectorAll('thead th[data-sort]').forEach(th=>th.addEventListener('click',()=>{if(srt===th.dataset.sort)asc=!asc;else{srt=th.dataset.sort;asc=false}document.querySelectorAll('#sorts .sb').forEach(b=>b.className='sb'+(b.dataset.sort===srt?' og':''));filt()}));
+  document.querySelectorAll('thead th[data-sort]').forEach(th=>th.addEventListener('click',()=>{
+    if(srt===th.dataset.sort)asc=!asc;else{srt=th.dataset.sort;asc=false}
+    document.querySelectorAll('#sorts .sb').forEach(b=>b.className='sb'+(b.dataset.sort===srt?' og':''));
+    filt();
+  }));
 }
 function gp(p){pg=p;tbl();window.scrollTo({top:0,behavior:'smooth'})}
-document.querySelectorAll('#cats .sb').forEach(b=>b.addEventListener('click',()=>{cat=b.dataset.cat;document.querySelectorAll('#cats .sb').forEach(x=>x.className='sb'+(x.dataset.cat===cat?' on':''));filt()}));
-document.querySelectorAll('#sorts .sb').forEach(b=>b.addEventListener('click',()=>{if(srt===b.dataset.sort)asc=!asc;else{srt=b.dataset.sort;asc=false}document.querySelectorAll('#sorts .sb').forEach(x=>x.className='sb'+(x.dataset.sort===srt?' og':''));filt()}));
+
+// ── Event listeners ───────────────────────────────────────────────────────
+document.querySelectorAll('#cats .sb').forEach(b=>b.addEventListener('click',()=>{
+  cat=b.dataset.cat;
+  document.querySelectorAll('#cats .sb').forEach(x=>x.className='sb'+(x.dataset.cat===cat?' on':''));
+  filt();
+}));
+document.querySelectorAll('#sorts .sb').forEach(b=>b.addEventListener('click',()=>{
+  if(srt===b.dataset.sort)asc=!asc;else{srt=b.dataset.sort;asc=false}
+  document.querySelectorAll('#sorts .sb').forEach(x=>x.className='sb'+(x.dataset.sort===srt?' og':''));
+  filt();
+}));
 $('srch').addEventListener('input',e=>{srch=e.target.value.trim();filt()});
-function setDate(dt){cD=dt;$('dp').value=dt;$('bnext').disabled=dt>=uD;$('blast').className='lb'+(dt===uD?' on':'');loadDate(dt)}
-$('bprev').addEventListener('click',()=>setDate(shift(cD,-1)));
-$('bnext').addEventListener('click',()=>{const n=shift(cD,1);if(n<=uD)setDate(n)});
-$('blast').addEventListener('click',()=>setDate(uD));
+
+function setDate(dt){
+  // Snap to ultimaData if beyond it
+  const snapped = dt > ultimaData ? ultimaData : dt;
+  currentDate=snapped;
+  $('dp').value=snapped;
+  $('bnext').disabled=snapped>=ultimaData;
+  $('blast').className='lb'+(snapped===ultimaData?' on':'');
+  filt();
+}
+$('bprev').addEventListener('click',()=>setDate(shift(currentDate,-1)));
+$('bnext').addEventListener('click',()=>{const n=shift(currentDate,1);if(n<=ultimaData)setDate(n)});
+$('blast').addEventListener('click',()=>setDate(ultimaData));
 $('dp').addEventListener('change',e=>{if(e.target.value)setDate(e.target.value)});
+
+// ── Init ──────────────────────────────────────────────────────────────────
 async function init(){
   try{
+    setSt('L','Baixando dados...');
     const r=await fetch('data/latest.json?v='+Date.now());
-    if(!r.ok)throw new Error();
-    const d=await r.json();
-    uD=d.ultimaData||'';$('dp').max=uD;aF=d.funds||[];cD=uD;$('dp').value=uD;$('blast').className='lb on';
-    $('gat').textContent='Gerado: '+(d.geradoEm?new Date(d.geradoEm).toLocaleString('pt-BR'):'-');
-    setSt('ok',aF.length+' fundos - '+fBR(uD));filt();
-  }catch(e){
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    const data=await r.json();
+
+    rawFunds   = data.funds||[];
+    ultimaData = data.ultimaData||'';
+
+    $('dp').max=ultimaData;
+    $('dp').value=ultimaData;
+    $('gat').textContent='Gerado: '+(data.geradoEm?new Date(data.geradoEm).toLocaleString('pt-BR'):'-');
+
+    currentDate=ultimaData;
+    $('blast').className='lb on';
+    filt();
+  } catch(e){
     setSt('E','Sem dados');
-    $('ta').innerHTML='<div class="er"><div class="em">Dados ainda nao gerados</div><div class="es">Va em <strong>Actions</strong> no repositorio GitHub e clique em <strong>Run workflow</strong> para gerar os dados agora.</div></div>';
+    $('ta').innerHTML='<div class="er">'
+      +'<div class="em">Dados nao encontrados</div>'
+      +'<div class="es">Va em <strong>Actions</strong> no repositorio GitHub e clique em <strong>Run workflow</strong>.</div>'
+      +'</div>';
   }
 }
 init();

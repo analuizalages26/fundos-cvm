@@ -149,7 +149,7 @@ async function loadDate(dt){
   for(const url of urls){try{const r=await fetch(url+'?v='+Date.now());if(r.ok){data=await r.json();break}}catch(e){}}
   if(!data){
     setSt('E','Sem dados');
-    $('ta').innerHTML='<div class="er"><div class="em">Dados nao encontrados</div><div class="es">Esta data nao tem dados gerados. Selecione outra data ou aguarde a atualizacao de amanha.</div><button class="rb" onclick="loadDate(''+uD+'')">Carregar ultimo dado</button></div>';
+    $('ta').innerHTML='<div class="er"><div class="em">Dados nao encontrados</div><div class="es">Esta data nao tem dados gerados. Selecione outra data ou aguarde a atualizacao de amanha.</div><button class="rb" onclick="loadDate(uD)">Carregar ultimo dado</button></div>';
     return;
   }
   aF=data.funds||[];

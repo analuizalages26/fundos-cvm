@@ -1,25 +1,21 @@
 #!/usr/bin/env python3
 """
-gerar_dados.py — Busca dados da CVM e gera arquivos JSON estáticos.
-Roda pelo GitHub Actions todo dia às 07h BRT.
-Saída: docs/data/latest.json + docs/data/YYYY-MM-DD.json
+gerar_dados.py — Busca dados da CVM e gera um único JSON com cotas brutas.
+O dashboard recalcula retornos no browser para qualquer data.
 """
 
 import urllib.request
 import zipfile, io, csv, json, re, os, unicodedata
-from datetime import date, timedelta
+from datetime import date, timedelta, datetime
 
-# ── URLs CVM ─────────────────────────────────────────────────────────────────
 CVM_CAD_OLD = 'https://dados.cvm.gov.br/dados/FI/CAD/DADOS/cad_fi.csv'
 CVM_CAD_ZIP = 'https://dados.cvm.gov.br/dados/FI/CAD/DADOS/registro_fundo_classe.zip'
 
 def diario_url(ym):
     return f'https://dados.cvm.gov.br/dados/FI/DOC/INF_DIARIO/DADOS/inf_diario_fi_{ym}.zip'
-
 def diario_hist_url(ym):
     return f'https://dados.cvm.gov.br/dados/FI/DOC/INF_DIARIO/DADOS/HIST/inf_diario_fi_{ym}.zip'
 
-# ── HTTP ──────────────────────────────────────────────────────────────────────
 def fetch(url, timeout=90):
     print(f'  GET {url.split("/")[-1]}')
     req = urllib.request.Request(url, headers={'User-Agent': 'FundosBR/1.0'})
@@ -29,7 +25,6 @@ def fetch(url, timeout=90):
 def fetch_text(url):
     return fetch(url).decode('latin-1')
 
-# ── ZIP / CSV ─────────────────────────────────────────────────────────────────
 def unzip_csvs(data):
     results = []
     with zipfile.ZipFile(io.BytesIO(data)) as z:
@@ -40,14 +35,11 @@ def unzip_csvs(data):
 
 def parse_csv(text):
     text = text.replace('\r\n', '\n').replace('\r', '\n')
-    reader = csv.DictReader(io.StringIO(text), delimiter=';')
-    return list(reader)
+    return list(csv.DictReader(io.StringIO(text), delimiter=';'))
 
-# ── CNPJ ─────────────────────────────────────────────────────────────────────
 def norm(s):
     return re.sub(r'[.\-/\s]', '', s or '').zfill(14)
 
-# ── Classificação ─────────────────────────────────────────────────────────────
 def strip_acc(s):
     return ''.join(c for c in unicodedata.normalize('NFD', s)
                    if unicodedata.category(c) != 'Mn')
@@ -62,7 +54,6 @@ def classify(tipo, nome):
         return 'multi'
     return None
 
-# ── Subtrai meses ─────────────────────────────────────────────────────────────
 def sub_months(d, m):
     month = d.month - m
     year  = d.year + (month - 1) // 12
@@ -71,11 +62,9 @@ def sub_months(d, m):
                          31,30,31,30,31,31,30,31,30,31][month-1])
     return date(year, month, day)
 
-# ── Cadastro ──────────────────────────────────────────────────────────────────
 def fetch_cadastro():
     print('\n[Cadastro]')
     all_rows = []
-
     try:
         rows = parse_csv(fetch_text(CVM_CAD_OLD))
         for r in rows:
@@ -112,70 +101,26 @@ def fetch_cadastro():
     print(f'  Total: {len(all_rows)}')
     return all_rows
 
-# ── Cotas mensais ─────────────────────────────────────────────────────────────
+_cota_cache = {}
+
 def fetch_mes(ym):
+    if ym in _cota_cache:
+        return _cota_cache[ym]
     for url in [diario_url(ym), diario_hist_url(ym)]:
         try:
             csvs = unzip_csvs(fetch(url))
             if csvs:
                 rows = parse_csv(csvs[0][1])
                 print(f'  {ym}: {len(rows)} linhas')
+                _cota_cache[ym] = rows
                 return rows
         except Exception as e:
-            print(f'  {ym} erro ({url.split("/")[-2]}): {e}')
+            print(f'  {ym} erro: {e}')
+    _cota_cache[ym] = []
     return []
 
-# ── Índice de cotas ───────────────────────────────────────────────────────────
-def build_index(rows):
-    idx = {}
-    for r in rows:
-        cnpj  = norm(r.get('CNPJ_FUNDO_CLASSE') or r.get('CNPJ_FUNDO') or '')
-        dt    = r.get('DT_COMPTC', '')
-        try:
-            quota = float(r.get('VL_QUOTA', '0').replace(',', '.'))
-            pl    = float(r.get('VL_PATRIM_LIQ', '0').replace(',', '.'))
-            cot   = int(r.get('NR_COTST', '0') or 0)
-        except:
-            continue
-        if not cnpj or not dt or not quota: continue
-        idx.setdefault(cnpj, []).append({'dt': dt, 'q': quota, 'pl': pl, 'c': cot})
-    for k in idx:
-        idx[k].sort(key=lambda x: x['dt'])
-    return idx
-
-def closest_before(entries, target):
-    best = None
-    for e in entries:
-        if e['dt'] <= target: best = e
-        else: break
-    return best
-
-def find_from(entries, target):
-    e = closest_before(entries, target)
-    return e or next((x for x in entries if x['dt'] >= target), entries[0])
-
-def ret(a, b):
-    if not a or not b or not a['q'] or not b['q']: return None
-    return round((b['q'] / a['q'] - 1) * 100, 4)
-
-def compute(entries, base_str):
-    base = closest_before(entries, base_str)
-    if not base: return None
-    bd   = date.fromisoformat(base_str)
-    y, m = bd.year, bd.month
-    return {
-        'retMTD': ret(find_from(entries, f'{y}-{m:02d}-01'), base),
-        'retYTD': ret(find_from(entries, f'{y}-01-01'),      base),
-        'ret12m': ret(find_from(entries, sub_months(bd,12).isoformat()), base),
-        'ret24m': ret(find_from(entries, sub_months(bd,24).isoformat()), base),
-        'pl':      base['pl'],
-        'cotistas': base['c'],
-        'lastDt':  base['dt'],
-    }
-
-# ── Main ──────────────────────────────────────────────────────────────────────
 def main():
-    # Monta fund_map com fundos ativos classificados
+    # 1. Cadastro
     cad = fetch_cadastro()
     fund_map = {}
     for f in cad:
@@ -190,65 +135,74 @@ def main():
 
     print(f'\n[FundMap] {len(fund_map)} fundos ativos')
 
-    # Descobre última data disponível (mês atual e anterior)
+    # 2. Fetch cotas — 26 meses para cobrir retorno 24M
     today = date.today()
     print('\n[Cotas]')
     all_rows = []
-    months = []
-    for i in range(26):
+    for i in range(27):
         d = sub_months(today, i)
-        months.append(f'{d.year}{d.month:02d}')
+        all_rows.extend(fetch_mes(f'{d.year}{d.month:02d}'))
 
-    for ym in months:
-        all_rows.extend(fetch_mes(ym))
+    # 3. Build index: cnpj -> {dt -> {q, pl, c}}
+    # Guardamos cotas brutas para o dashboard recalcular
+    idx = {}  # cnpj -> sorted list of [dt, quota, pl, cotistas]
+    for r in all_rows:
+        cnpj  = norm(r.get('CNPJ_FUNDO_CLASSE') or r.get('CNPJ_FUNDO') or '')
+        dt    = r.get('DT_COMPTC', '')
+        try:
+            quota = float(r.get('VL_QUOTA', '0').replace(',', '.'))
+            pl    = float(r.get('VL_PATRIM_LIQ', '0').replace(',', '.'))
+            cot   = int(r.get('NR_COTST', '0') or 0)
+        except:
+            continue
+        if not cnpj or not dt or not quota: continue
+        if cnpj not in fund_map: continue  # só fundos relevantes
+        idx.setdefault(cnpj, {})[dt] = [round(quota, 8), round(pl, 2), cot]
 
-    idx = build_index(all_rows)
-    print(f'\n[Índice] {len(idx)} CNPJs com cotas')
+    print(f'\n[Índice] {len(idx)} fundos com cotas')
 
-    # Descobre última data disponível
-    all_dates = []
-    for entries in idx.values():
-        if entries: all_dates.append(entries[-1]['dt'])
-    ultima_data = max(all_dates) if all_dates else (today - timedelta(days=2)).isoformat()
-    print(f'\n[Última data] {ultima_data}')
+    # 4. Filtra fundos com PL mínimo e mínimo de cotas
+    ultima_data = ''
+    funds_out = []
+    for cnpj, cotas_dict in idx.items():
+        if len(cotas_dict) < 10: continue
+        # sorted dates
+        dates = sorted(cotas_dict.keys())
+        ultima_data = max(ultima_data, dates[-1])
 
-    # Calcula retornos
-    print('\n[Calculando retornos]')
-    funds = []
-    matched = set(fund_map) & set(idx)
-    print(f'  Match: {len(matched)} fundos')
+        # PL do último dia
+        last_pl = cotas_dict[dates[-1]][1]
+        if last_pl < 1_000_000: continue
 
-    for cnpj in matched:
-        entries = idx[cnpj]
-        if len(entries) < 5: continue
-        rets = compute(entries, ultima_data)
-        if not rets or not rets['pl'] or rets['pl'] < 1_000_000: continue
-        funds.append({
+        # Serializa cotas como lista de [dt, quota, pl, cotistas] ordenada
+        cotas_list = [[dt] + cotas_dict[dt] for dt in dates]
+
+        funds_out.append({
             'cnpj': cnpj,
             'nome': fund_map[cnpj]['nome'],
             'cat':  fund_map[cnpj]['cat'],
-            **rets,
+            'cotas': cotas_list,  # [[dt, quota, pl, cotistas], ...]
         })
 
-    funds.sort(key=lambda x: x['pl'] or 0, reverse=True)
-    print(f'  Resultado: {len(funds)} fundos')
+    # Ordena por PL do último dado
+    funds_out.sort(key=lambda f: f['cotas'][-1][2] if f['cotas'] else 0, reverse=True)
 
-    # Salva JSON
-    from datetime import datetime
+    print(f'[Resultado] {len(funds_out)} fundos | última data: {ultima_data}')
+
+    # 5. Salva
+    os.makedirs('docs/data', exist_ok=True)
     payload = {
-        'ultimaData':   ultima_data,
-        'geradoEm':     datetime.utcnow().isoformat() + 'Z',
-        'totalFundos':  len(funds),
-        'funds':        funds,
+        'ultimaData':  ultima_data,
+        'geradoEm':    datetime.utcnow().isoformat() + 'Z',
+        'totalFundos': len(funds_out),
+        'funds':       funds_out,
     }
 
-    os.makedirs('docs/data', exist_ok=True)
     with open('docs/data/latest.json', 'w', encoding='utf-8') as f:
         json.dump(payload, f, ensure_ascii=False, separators=(',', ':'))
-    with open(f'docs/data/{ultima_data}.json', 'w', encoding='utf-8') as f:
-        json.dump(payload, f, ensure_ascii=False, separators=(',', ':'))
 
-    print(f'\n✓ Salvo: docs/data/latest.json e docs/data/{ultima_data}.json')
+    size_mb = os.path.getsize('docs/data/latest.json') / 1e6
+    print(f'\n✓ docs/data/latest.json ({size_mb:.1f} MB)')
 
 if __name__ == '__main__':
     main()
